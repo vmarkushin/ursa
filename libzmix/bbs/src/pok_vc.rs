@@ -10,6 +10,8 @@
 //! During response generation `ProverCommitted` is consumed to create `Proof` object containing the commitments and responses.
 //! `Proof` can then be verified by the verifier.
 
+#[cfg(feature = "wasm")]
+use crate::errors::{BBSError, BBSErrorKind};
 use crate::{
     hash_to_fr, multi_scalar_mul_const_time_g1, Commitment, GeneratorG1, ProofChallenge,
     SignatureMessage, ToVariableLengthBytes, FR_COMPRESSED_SIZE, G1_COMPRESSED_SIZE,
@@ -31,6 +33,8 @@ use serde::{
 use std::convert::TryFrom;
 use std::fmt::{self, Formatter};
 use std::io::{Cursor, Read};
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
 
 /// Convenience importing module
 pub mod prelude {
@@ -93,6 +97,28 @@ impl From<std::io::Error> for PoKVCError {
         PoKVCError::from_kind(PoKVCErrorKind::GeneralError {
             msg: format!("{:?}", err),
         })
+    }
+}
+
+#[cfg(feature = "wasm")]
+impl From<PoKVCError> for JsValue {
+    fn from(error: PoKVCError) -> Self {
+        JsValue::from_str(&format!("{}", error))
+    }
+}
+
+#[cfg(feature = "wasm")]
+impl From<JsValue> for PoKVCError {
+    fn from(js: JsValue) -> Self {
+        if js.is_string() {
+            PoKVCError::from(PoKVCErrorKind::GeneralError {
+                msg: js.as_string().unwrap(),
+            })
+        } else {
+            PoKVCError::from(PoKVCErrorKind::GeneralError {
+                msg: "".to_string(),
+            })
+        }
     }
 }
 
@@ -196,8 +222,8 @@ impl ProverCommittingG1 {
             .into());
         }
         Ok((
-            GeneratorG1(self.bases[idx].clone()),
-            SignatureMessage(self.blinding_factors[idx].clone()),
+            GeneratorG1(self.bases[idx]),
+            SignatureMessage(self.blinding_factors[idx]),
         ))
     }
 }
@@ -241,9 +267,9 @@ impl ProverCommittedG1 {
         }
         let mut responses = Vec::with_capacity(self.bases.len());
         for i in 0..self.bases.len() {
-            let mut c = challenge.0.clone();
+            let mut c = challenge.0;
             c.mul_assign(&secrets[i].0);
-            let mut s = self.blinding_factors[i].clone();
+            let mut s = self.blinding_factors[i];
             s.sub_assign(&c);
             responses.push(s);
         }
@@ -268,7 +294,6 @@ impl ProofG1 {
         // bases[0]^responses[0] * bases[0]^responses[0] * ... bases[i]^responses[i] * commitment^challenge == random_commitment
         // =>
         // bases[0]^responses[0] * bases[0]^responses[0] * ... bases[i]^responses[i] * commitment^challenge * random_commitment^-1 == 1
-        let bases = bases.as_ref();
         if bases.len() != self.responses.len() {
             return Err(PoKVCErrorKind::UnequalNoOfBasesExponents {
                 bases: bases.len(),
@@ -276,7 +301,7 @@ impl ProofG1 {
             }
             .into());
         }
-        let mut points: Vec<G1> = bases.iter().map(|g| g.0.clone()).collect();
+        let mut points: Vec<G1> = bases.iter().map(|g| g.0).collect();
         let mut scalars = self.responses.clone();
         points.push(commitment.0.clone());
         scalars.push(challenge.0.clone());
@@ -306,7 +331,6 @@ impl ProofG1 {
         challenge: &ProofChallenge,
         nonce: &[u8],
     ) -> Result<bool, PoKVCError> {
-        let bases = bases.as_ref();
         if bases.len() != self.responses.len() {
             return Err(PoKVCErrorKind::UnequalNoOfBasesExponents {
                 bases: bases.len(),
@@ -314,7 +338,7 @@ impl ProofG1 {
             }
             .into());
         }
-        let mut points: Vec<G1> = bases.iter().map(|b| b.0.clone()).collect();
+        let mut points: Vec<G1> = bases.iter().map(|b| b.0).collect();
         let bases = points.clone();
         let mut scalars = self.responses.clone();
         points.push(commitment.0.clone());
@@ -355,7 +379,7 @@ impl ProofG1 {
     ) -> Result<Self, PoKVCError> {
         if data.len() < g_size + 4 {
             return Err(PoKVCErrorKind::GeneralError {
-                msg: format!("Invalid length"),
+                msg: "Invalid length".to_string(),
             }
             .into());
         }
@@ -369,7 +393,7 @@ impl ProofG1 {
 
         if data.len() < g_size + 4 + length * FR_COMPRESSED_SIZE {
             return Err(PoKVCErrorKind::GeneralError {
-                msg: format!("Invalid length"),
+                msg: "Invalid length".to_string(),
             }
             .into());
         }
@@ -384,6 +408,15 @@ impl ProofG1 {
             commitment,
             responses,
         })
+    }
+}
+
+impl Default for ProofG1 {
+    fn default() -> Self {
+        Self {
+            commitment: G1::zero(),
+            responses: Vec::new(),
+        }
     }
 }
 
@@ -410,6 +443,9 @@ impl ToVariableLengthBytes for ProofG1 {
 
 try_from_impl!(ProofG1, PoKVCError);
 serdes_impl!(ProofG1);
+
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(ProofG1);
 
 #[cfg(test)]
 macro_rules! test_PoK_VC {

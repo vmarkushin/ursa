@@ -1,6 +1,8 @@
 use crate::pok_sig::PoKOfSignatureProofStatus;
 use crate::pok_vc::PoKVCError;
 use failure::{Backtrace, Context, Fail};
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
 
 /// Convenience importing module
 pub mod prelude {
@@ -122,6 +124,44 @@ impl std::fmt::Display for BBSError {
     }
 }
 
+#[cfg(feature = "wasm")]
+impl From<BBSError> for JsValue {
+    fn from(error: BBSError) -> Self {
+        JsValue::from_str(&format!("{}", error))
+    }
+}
+
+#[cfg(feature = "wasm")]
+impl From<JsValue> for BBSError {
+    fn from(js: JsValue) -> Self {
+        if js.is_string() {
+            BBSError::from(BBSErrorKind::GeneralError {
+                msg: js.as_string().unwrap(),
+            })
+        } else {
+            BBSError::from(BBSErrorKind::GeneralError {
+                msg: "".to_string(),
+            })
+        }
+    }
+}
+
+#[cfg(feature = "wasm")]
+impl From<serde_wasm_bindgen::Error> for BBSError {
+    fn from(err: serde_wasm_bindgen::Error) -> Self {
+        BBSError::from(BBSErrorKind::GeneralError {
+            msg: format!("{:?}", err),
+        })
+    }
+}
+
+#[cfg(feature = "wasm")]
+impl From<BBSError> for serde_wasm_bindgen::Error {
+    fn from(err: BBSError) -> Self {
+        serde_wasm_bindgen::Error::new(err)
+    }
+}
+
 /// Generate an error from a kind and static string
 pub fn err_msg<D>(kind: BBSErrorKind, msg: D) -> BBSError
 where
@@ -165,8 +205,6 @@ impl From<PoKVCError> for BBSError {
                 .collect::<String>()
         );
 
-        match err.kind() {
-            _ => BBSError::from_kind(BBSErrorKind::PoKVCError { msg: message }),
-        }
+        BBSError::from_kind(BBSErrorKind::PoKVCError { msg: message })
     }
 }

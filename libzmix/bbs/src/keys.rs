@@ -5,6 +5,7 @@ use crate::{
     G2_COMPRESSED_SIZE, G2_UNCOMPRESSED_SIZE,
 };
 use blake2::{digest::generic_array::GenericArray, Blake2b};
+use ff_zeroize::Field;
 use pairing_plus::{
     bls12_381::{Fr, G1, G2},
     hash_to_field::BaseFromRO,
@@ -23,6 +24,8 @@ use std::{
     convert::TryFrom,
     fmt::{Display, Formatter},
 };
+#[cfg(feature = "wasm")]
+use wasm_bindgen::JsValue;
 use zeroize::Zeroize;
 
 /// Convenience importing module
@@ -52,11 +55,15 @@ impl SecretKey {
     to_fixed_length_bytes_impl!(SecretKey, Fr, FR_COMPRESSED_SIZE, FR_COMPRESSED_SIZE);
 }
 
+default_zero_impl!(SecretKey, Fr);
 from_impl!(SecretKey, Fr, FR_COMPRESSED_SIZE);
 display_impl!(SecretKey);
 serdes_impl!(SecretKey);
 hash_elem_impl!(SecretKey, |data| { generate_secret_key(Some(data)) });
 random_elem_impl!(SecretKey, { generate_secret_key(None) });
+
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(SecretKey);
 
 impl Zeroize for SecretKey {
     fn zeroize(&mut self) {
@@ -110,7 +117,7 @@ impl PublicKey {
         if (data.len() - 4) % g1_size != 0 {
             return Err(BBSErrorKind::MalformedPublicKey.into());
         }
-        let mut c = Cursor::new(data.as_ref());
+        let mut c = Cursor::new(data);
         let w = GeneratorG2(G2::deserialize(&mut c, compressed)?);
         let h0 = GeneratorG1(G1::deserialize(&mut c, compressed)?);
 
@@ -159,9 +166,21 @@ impl ToVariableLengthBytes for PublicKey {
     }
 }
 
+impl Default for PublicKey {
+    fn default() -> Self {
+        Self {
+            h0: GeneratorG1::default(),
+            h: Vec::new(),
+            w: GeneratorG2::default(),
+        }
+    }
+}
+
 try_from_impl!(PublicKey, BBSError);
 display_impl!(PublicKey);
 serdes_impl!(PublicKey);
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(PublicKey);
 
 /// Size of a compressed deterministic public key
 pub const DETERMINISTIC_PUBLIC_KEY_COMPRESSED_SIZE: usize = G2_COMPRESSED_SIZE;
@@ -180,6 +199,7 @@ impl DeterministicPublicKey {
     );
 }
 
+default_zero_impl!(DeterministicPublicKey, G2);
 as_ref_impl!(DeterministicPublicKey, G2);
 from_impl!(
     DeterministicPublicKey,
@@ -250,12 +270,15 @@ impl DeterministicPublicKey {
             .collect::<Vec<GeneratorG1>>();
 
         Ok(PublicKey {
-            w: GeneratorG2(self.0.clone()),
-            h0: h[0].clone(),
+            w: GeneratorG2(self.0),
+            h0: h[0],
             h: h[1..].to_vec(),
         })
     }
 }
+
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(DeterministicPublicKey);
 
 /// Create a new BBS+ keypair. The generators of the public key are generated at random
 pub fn generate(message_count: usize) -> Result<(PublicKey, SecretKey), BBSError> {
@@ -284,7 +307,7 @@ pub fn generate(message_count: usize) -> Result<(PublicKey, SecretKey), BBSError
     Ok((
         PublicKey {
             w: GeneratorG2(w),
-            h0: h[0].clone(),
+            h0: h[0],
             h: h[1..].to_vec(),
         },
         secret,

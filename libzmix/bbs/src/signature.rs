@@ -20,6 +20,8 @@ use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::fmt::{Display, Formatter};
 use std::io::Cursor;
+#[cfg(feature = "wasm")]
+use wasm_bindgen::JsValue;
 
 /// Convenience module
 pub mod prelude {
@@ -98,6 +100,32 @@ macro_rules! try_from_impl {
                 Self::try_from(value.as_slice())
             }
         }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self {
+                    a: G1::zero(),
+                    e: Fr::zero(),
+                    s: Fr::zero(),
+                }
+            }
+        }
+
+        impl From<Box<[u8]>> for $name {
+            fn from(data: Box<[u8]>) -> $name {
+                let data = Vec::from(data);
+                match $name::try_from(data) {
+                    Ok(t) => t,
+                    Err(_) => $name::default(),
+                }
+            }
+        }
+
+        impl Into<Box<[u8]>> for $name {
+            fn into(self) -> Box<[u8]> {
+                self.to_bytes_compressed_form().to_vec().into()
+            }
+        }
     };
 }
 
@@ -154,7 +182,7 @@ impl BlindSignature {
 
         let mut b = multi_scalar_mul_const_time_g1(&points, &scalars);
 
-        let mut exp = signkey.0.clone();
+        let mut exp = signkey.0;
         exp.add_assign(&e);
         b.mul_assign(exp.inverse().unwrap());
         Ok(Self { a: b, e, s })
@@ -163,12 +191,12 @@ impl BlindSignature {
     /// Once signature on committed attributes (blind signature) is received, the signature needs to be unblinded.
     /// Takes the blinding factor used in the commitment.
     pub fn to_unblinded(&self, blinding: &SignatureBlinding) -> Signature {
-        let mut s = self.s.clone();
+        let mut s = self.s;
         s.add_assign(&blinding.0);
         Signature {
-            a: self.a.clone(),
+            a: self.a,
             s,
-            e: self.e.clone(),
+            e: self.e,
         }
     }
 
@@ -202,6 +230,9 @@ try_from_impl!(BlindSignature);
 serdes_impl!(BlindSignature);
 display_impl!(BlindSignature);
 
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(BlindSignature);
+
 /// A BBS+ signature.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signature {
@@ -230,7 +261,7 @@ impl Signature {
         let e = Fr::random(&mut rng);
         let s = Fr::random(&mut rng);
         let mut b = Self::compute_b(&s, messages, verkey);
-        let mut exp = signkey.0.clone();
+        let mut exp = signkey.0;
         exp.add_assign(&e);
         b.mul_assign(exp.inverse().unwrap());
         Ok(Self { a: b, e, s })
@@ -341,6 +372,8 @@ from_bytes_impl!(
 try_from_impl!(Signature);
 serdes_impl!(Signature);
 display_impl!(Signature);
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(Signature);
 
 #[cfg(test)]
 mod tests {

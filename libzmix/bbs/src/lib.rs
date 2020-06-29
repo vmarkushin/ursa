@@ -18,11 +18,19 @@
 
 #![deny(
     missing_docs,
-    unsafe_code,
+    trivial_casts,
+    trivial_numeric_casts,
+    unconditional_recursion,
     unused_import_braces,
     unused_lifetimes,
-    unused_qualifications
+    unused_qualifications,
+    unused_extern_crates,
+    unused_parens,
+    while_true
 )]
+
+#[cfg(all(feature = "wasm", feature = "rayon"))]
+compile_error!("wasm does not support rayon. Remove the dependency on rayon.");
 
 #[macro_use]
 extern crate arrayref;
@@ -52,6 +60,8 @@ use serde::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryFrom;
 use std::io::Cursor;
+#[cfg(feature = "wasm")]
+use wasm_bindgen::JsValue;
 
 /// Number of bytes in scalar compressed form
 pub const FR_COMPRESSED_SIZE: usize = 32;
@@ -143,11 +153,15 @@ impl Commitment {
     to_fixed_length_bytes_impl!(Commitment, G1, G1_COMPRESSED_SIZE, G1_UNCOMPRESSED_SIZE);
 }
 
+default_zero_impl!(Commitment, G1);
 as_ref_impl!(Commitment, G1);
 from_impl!(Commitment, G1, G1_COMPRESSED_SIZE, G1_UNCOMPRESSED_SIZE);
 display_impl!(Commitment);
 serdes_impl!(Commitment);
 hash_elem_impl!(Commitment, |data| { Commitment(hash_to_g1(data)) });
+
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(Commitment);
 
 /// Wrapper for G1
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -157,12 +171,15 @@ impl GeneratorG1 {
     to_fixed_length_bytes_impl!(GeneratorG1, G1, G1_COMPRESSED_SIZE, G1_UNCOMPRESSED_SIZE);
 }
 
+default_zero_impl!(GeneratorG1, G1);
 as_ref_impl!(GeneratorG1, G1);
 from_impl!(GeneratorG1, G1, G1_COMPRESSED_SIZE, G1_UNCOMPRESSED_SIZE);
 display_impl!(GeneratorG1);
 serdes_impl!(GeneratorG1);
 hash_elem_impl!(GeneratorG1, |data| { GeneratorG1(hash_to_g1(data)) });
 random_elem_impl!(GeneratorG1, { Self(G1::random(&mut thread_rng())) });
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(GeneratorG1);
 
 /// Wrapper for G2
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -172,14 +189,17 @@ impl GeneratorG2 {
     to_fixed_length_bytes_impl!(GeneratorG2, G2, G2_COMPRESSED_SIZE, G2_UNCOMPRESSED_SIZE);
 }
 
+default_zero_impl!(GeneratorG2, G2);
 as_ref_impl!(GeneratorG2, G2);
 from_impl!(GeneratorG2, G2, G2_COMPRESSED_SIZE, G2_UNCOMPRESSED_SIZE);
 display_impl!(GeneratorG2);
 serdes_impl!(GeneratorG2);
 hash_elem_impl!(GeneratorG2, |data| { GeneratorG2(hash_to_g2(data)) });
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(GeneratorG2);
 
 /// Convenience wrapper for creating commitments
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct CommitmentBuilder {
     bases: Vec<G1>,
     scalars: Vec<Fr>,
@@ -197,7 +217,7 @@ impl CommitmentBuilder {
     /// Add a new base and scalar to the commitment
     pub fn add<B: AsRef<G1>, S: AsRef<Fr>>(&mut self, base: B, scalar: S) {
         self.bases.push(base.as_ref().clone());
-        self.scalars.push(scalar.as_ref().clone().into());
+        self.scalars.push(scalar.as_ref().clone());
     }
 
     /// Convert to commitment
@@ -214,6 +234,7 @@ impl SignatureMessage {
     to_fixed_length_bytes_impl!(SignatureMessage, Fr, FR_COMPRESSED_SIZE, FR_COMPRESSED_SIZE);
 }
 
+default_zero_impl!(SignatureMessage, Fr);
 as_ref_impl!(SignatureMessage, Fr);
 from_impl!(SignatureMessage, Fr, FR_COMPRESSED_SIZE);
 display_impl!(SignatureMessage);
@@ -222,6 +243,8 @@ hash_elem_impl!(SignatureMessage, |data| {
     SignatureMessage(hash_to_fr(data))
 });
 random_elem_impl!(SignatureMessage, { Self(Fr::random(&mut thread_rng())) });
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(SignatureMessage);
 
 /// The type for nonces
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -231,12 +254,15 @@ impl ProofNonce {
     to_fixed_length_bytes_impl!(ProofNonce, Fr, FR_COMPRESSED_SIZE, FR_COMPRESSED_SIZE);
 }
 
+default_zero_impl!(ProofNonce, Fr);
 as_ref_impl!(ProofNonce, Fr);
 from_impl!(ProofNonce, Fr, FR_COMPRESSED_SIZE);
 display_impl!(ProofNonce);
 serdes_impl!(ProofNonce);
 hash_elem_impl!(ProofNonce, |data| { ProofNonce(hash_to_fr(data)) });
 random_elem_impl!(ProofNonce, { Self(Fr::random(&mut thread_rng())) });
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(ProofNonce);
 
 /// The Fiat-Shamir Challenge in proofs
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -246,12 +272,15 @@ impl ProofChallenge {
     to_fixed_length_bytes_impl!(ProofChallenge, Fr, FR_COMPRESSED_SIZE, FR_COMPRESSED_SIZE);
 }
 
+default_zero_impl!(ProofChallenge, Fr);
 as_ref_impl!(ProofChallenge, Fr);
 from_impl!(ProofChallenge, Fr, FR_COMPRESSED_SIZE);
 display_impl!(ProofChallenge);
 serdes_impl!(ProofChallenge);
 hash_elem_impl!(ProofChallenge, |data| { ProofChallenge(hash_to_fr(data)) });
 random_elem_impl!(ProofChallenge, { Self(Fr::random(&mut thread_rng())) });
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(ProofChallenge);
 
 /// The type for blinding factors
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -266,6 +295,7 @@ impl SignatureBlinding {
     );
 }
 
+default_zero_impl!(SignatureBlinding, Fr);
 as_ref_impl!(SignatureBlinding, Fr);
 from_impl!(SignatureBlinding, Fr, FR_COMPRESSED_SIZE);
 display_impl!(SignatureBlinding);
@@ -274,6 +304,8 @@ hash_elem_impl!(SignatureBlinding, |data| {
     SignatureBlinding(hash_to_fr(data))
 });
 random_elem_impl!(SignatureBlinding, { Self(Fr::random(&mut thread_rng())) });
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(SignatureBlinding);
 
 pub(crate) fn hash_to_g1<I: AsRef<[u8]>>(data: I) -> G1 {
     const DST: &[u8] = b"BLS12381G1_XMD:BLAKE2B_SSWU_RO_BBS+_SIGNATURES:1_0_0";
@@ -326,17 +358,14 @@ pub(crate) fn multi_scalar_mul_var_time_g1<G: AsRef<[G1]>, S: AsRef<[Fr]>>(
             .par_iter()
             .zip(scalars.par_iter())
             .map(|(b, s)| {
-                let mut t = b.clone();
+                let mut t = *b;
                 t.mul_assign(*s);
                 t
             })
-            .reduce(
-                || G1::zero(),
-                |mut acc, b| {
-                    acc.add_assign(&b);
-                    acc
-                },
-            )
+            .reduce(G1::zero, |mut acc, b| {
+                acc.add_assign(&b);
+                acc
+            })
     }
     #[cfg(not(feature = "rayon"))]
     {
@@ -474,11 +503,23 @@ impl ToVariableLengthBytes for BlindSignatureContext {
     }
 }
 
+impl Default for BlindSignatureContext {
+    fn default() -> Self {
+        Self {
+            commitment: Commitment::default(),
+            challenge_hash: ProofChallenge::default(),
+            proof_of_hidden_messages: ProofG1::default(),
+        }
+    }
+}
+
 try_from_impl!(BlindSignatureContext, BBSError);
 serdes_impl!(BlindSignatureContext);
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(BlindSignatureContext);
 
 /// Contains the data from a verifier to a prover
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ProofRequest {
     /// Allow the prover to retrieve which messages should be revealed.
     /// Might be prompted in a GUI or CLI
@@ -490,7 +531,7 @@ pub struct ProofRequest {
 
 impl ProofRequest {
     pub(crate) fn to_bytes(&self, compressed: bool) -> Vec<u8> {
-        let revealed: Vec<usize> = (&self.revealed_messages).iter().map(|i| *i).collect();
+        let revealed: Vec<usize> = (&self.revealed_messages).iter().copied().collect();
         let mut temp =
             revealed_to_bitvector(self.verification_key.message_count(), revealed.as_slice());
         let mut key = self.verification_key.to_bytes(compressed);
@@ -520,6 +561,20 @@ impl ProofRequest {
         })
     }
 }
+
+impl Default for ProofRequest {
+    fn default() -> Self {
+        Self {
+            revealed_messages: BTreeSet::new(),
+            verification_key: PublicKey::default(),
+        }
+    }
+}
+
+try_from_impl!(ProofRequest, BBSError);
+serdes_impl!(ProofRequest);
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(ProofRequest);
 
 impl ToVariableLengthBytes for ProofRequest {
     type Output = ProofRequest;
@@ -644,8 +699,19 @@ impl ToVariableLengthBytes for SignatureProof {
     }
 }
 
+impl Default for SignatureProof {
+    fn default() -> Self {
+        Self {
+            revealed_messages: BTreeMap::new(),
+            proof: PoKOfSignatureProof::default(),
+        }
+    }
+}
+
 try_from_impl!(SignatureProof, BBSError);
 serdes_impl!(SignatureProof);
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(SignatureProof);
 
 /// Expects `revealed` to be sorted
 fn revealed_to_bitvector(total: usize, revealed: &[usize]) -> Vec<u8> {

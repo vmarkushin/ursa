@@ -24,6 +24,9 @@ use std::convert::TryFrom;
 use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::io::Cursor;
 
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
+
 /// Convenience importing module
 pub mod prelude {
     pub use super::{PoKOfSignature, PoKOfSignatureProof, PoKOfSignatureProofStatus};
@@ -54,6 +57,7 @@ pub struct PoKOfSignature {
 }
 
 /// Indicates the status returned from `PoKOfSignatureProof`
+#[cfg_attr(feature = "wasm", wasm_bindgen)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PoKOfSignatureProofStatus {
     /// The proof verified
@@ -186,7 +190,7 @@ impl PoKOfSignature {
         let mut secrets_1 = Vec::with_capacity(2);
         // For a_prime^{-e}
         committing_1.commit(&GeneratorG1(a_prime));
-        let mut sig_e = signature.e.clone();
+        let mut sig_e = signature.e;
         sig_e.negate();
         secrets_1.push(sig_e);
         // For h_0^r2
@@ -268,12 +272,12 @@ impl PoKOfSignature {
         let secrets_1: Vec<_> = self
             .secrets_1
             .iter()
-            .map(|s| SignatureMessage((*s).clone()))
+            .map(|s| SignatureMessage(*s))
             .collect();
         let secrets_2: Vec<_> = self
             .secrets_2
             .iter()
-            .map(|s| SignatureMessage((*s).clone()))
+            .map(|s| SignatureMessage(*s))
             .collect();
         let proof_vc_1 = self
             .pok_vc_1
@@ -337,9 +341,7 @@ impl PoKOfSignatureProof {
             }));
         }
         // 2 added to the index, since 0th and 1st index are reserved for `&signature.e` and `r2`
-        Ok(SignatureMessage(
-            self.proof_vc_2.responses[2 + msg_idx].clone(),
-        ))
+        Ok(SignatureMessage(self.proof_vc_2.responses[2 + msg_idx]))
     }
 
     /// Validate the proof
@@ -383,7 +385,7 @@ impl PoKOfSignatureProof {
         };
 
         let mut bases = vec![];
-        bases.push(GeneratorG1(self.a_prime.clone()));
+        bases.push(GeneratorG1(self.a_prime));
         bases.push(vk.h0.clone());
         // a_bar / d
         let mut a_bar_d = self.a_bar;
@@ -397,7 +399,7 @@ impl PoKOfSignatureProof {
         }
 
         let mut bases_pok_vc_2 = Vec::with_capacity(2 + vk.message_count() - revealed_msgs.len());
-        bases_pok_vc_2.push(GeneratorG1(self.d.clone()));
+        bases_pok_vc_2.push(GeneratorG1(self.d));
         bases_pok_vc_2.push(vk.h0.clone());
 
         // `bases_disclosed` and `exponents` below are used to create g1 * h1^-m1 * h2^-m2.... for all disclosed messages m_i
@@ -459,7 +461,7 @@ impl PoKOfSignatureProof {
                 msg: format!("Invalid proof bytes. Expected {}", g1_size * 3),
             }));
         }
-        let mut c = Cursor::new(data.as_ref());
+        let mut c = Cursor::new(data);
         let mut offset;
         let mut end = g1_size;
         let a_prime = slice_to_elem!(&mut c, G1, compressed)?;
@@ -514,8 +516,22 @@ impl ToVariableLengthBytes for PoKOfSignatureProof {
     }
 }
 
+impl Default for PoKOfSignatureProof {
+    fn default() -> Self {
+        Self {
+            a_prime: G1::zero(),
+            a_bar: G1::zero(),
+            d: G1::zero(),
+            proof_vc_1: ProofG1::default(),
+            proof_vc_2: ProofG1::default(),
+        }
+    }
+}
+
 try_from_impl!(PoKOfSignatureProof, BBSError);
 serdes_impl!(PoKOfSignatureProof);
+#[cfg(feature = "wasm")]
+wasm_slice_impl!(PoKOfSignatureProof);
 
 #[cfg(test)]
 mod tests {
